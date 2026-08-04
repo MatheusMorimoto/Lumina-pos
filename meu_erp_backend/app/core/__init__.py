@@ -1,0 +1,1 @@
+"""Infraestrutura transversal da aplicação."""
