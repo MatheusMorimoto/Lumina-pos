@@ -35,7 +35,9 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        # O wildcard nao pode ser combinado com credenciais CORS em navegadores.
+        # A API usa Authorization: Bearer, portanto cookies nao sao necessarios.
+        allow_credentials="*" not in settings.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )

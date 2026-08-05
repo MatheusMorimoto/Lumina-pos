@@ -1,6 +1,7 @@
 """Cadastro PF/PJ usando Supabase Auth e a função transacional do banco."""
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from enum import StrEnum
@@ -16,6 +17,9 @@ from app.core.database import (
     unwrap_response,
 )
 from app.shared.exceptions import ApplicationError, ConflictError
+
+
+logger = logging.getLogger(__name__)
 
 
 class UpstreamError(ApplicationError):
@@ -213,7 +217,28 @@ class RegistrationService:
             message = str(exc).lower()
             if any(term in message for term in ("already", "duplicate", "registered")):
                 raise ConflictError("E-mail ou documento já cadastrado.") from None
-            raise UpstreamError("Falha na comunicação com o Supabase.") from exc
+            logger.exception("Falha no cadastro via Supabase")
+            if "rate limit" in message:
+                raise UpstreamError(
+                    "Limite temporário de cadastros do Supabase atingido. Tente novamente mais tarde."
+                ) from exc
+            if "email" in message and any(
+                term in message for term in ("invalid", "not authorized", "disabled")
+            ):
+                raise UpstreamError(
+                    "O cadastro por e-mail não está habilitado corretamente no Supabase."
+                ) from exc
+            if any(term in message for term in ("complete_registration", "schema cache", "function")):
+                raise UpstreamError(
+                    "A migração complete_registration ainda não foi aplicada no Supabase."
+                ) from exc
+            if any(term in message for term in ("timed out", "connect", "network")):
+                raise UpstreamError(
+                    "O Supabase está configurado, mas não respondeu à solicitação de cadastro."
+                ) from exc
+            raise UpstreamError(
+                "O Supabase recusou o cadastro. Consulte os logs da API no Render."
+            ) from exc
 
     @staticmethod
     def _compensate(user_id: str) -> None:
@@ -260,4 +285,3 @@ class ProductTaxProfileIn(BaseModel):
     valid_from: date = Field(default_factory=date.today)
     valid_until: date | None = None
     manually_reviewed: bool = False
-
