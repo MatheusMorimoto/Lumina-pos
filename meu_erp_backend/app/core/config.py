@@ -1,10 +1,15 @@
 """Configurações tipadas carregadas do ambiente e do arquivo .env."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -25,6 +30,7 @@ class Settings(BaseSettings):
     supabase_secret_key: str | None = None
     supabase_service_role_key: str | None = None
     database_url: str | None = None
+    supabase_timeout_seconds: float = Field(default=10, gt=0, le=120)
 
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
@@ -41,7 +47,8 @@ class Settings(BaseSettings):
         return self.supabase_secret_key or self.supabase_service_role_key
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Nao depender do diretorio usado para iniciar o servidor.
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         env_prefix="ERP_",
         case_sensitive=False,

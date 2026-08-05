@@ -50,9 +50,16 @@ Alternativamente, execute
 uvicorn app.main:app --reload
 ```
 
+Na raiz do repositorio, o comando equivalente e:
+
+```powershell
+python app.py
+```
+
 - API: `http://127.0.0.1:8000`
 - Swagger: `http://127.0.0.1:8000/docs`
 - Health check: `http://127.0.0.1:8000/health`
+- Banco de dados: `http://127.0.0.1:8000/health/ready`
 
 ## Testes
 

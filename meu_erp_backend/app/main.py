@@ -3,10 +3,11 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import check_database_connection
 from app.modules.crediario.router import router as crediario_router
 from app.modules.estoque.router import router as estoque_router
 from app.modules.vendas.router import router as vendas_router
@@ -48,7 +49,23 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["health"])
     def health_check() -> dict[str, str]:
-        return {"status": "ok"}
+        """Liveness: confirma que o processo da API esta respondendo."""
+        return {"status": "ok", "api": "online"}
+
+    @app.get("/health/ready", tags=["health"])
+    def readiness_check(response: Response) -> dict[str, str]:
+        """Readiness: confirma comunicacao real com o Supabase/PostgREST."""
+        try:
+            check_database_connection()
+        except Exception as exc:
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {
+                "status": "unavailable",
+                "api": "online",
+                "database": "offline",
+                "detail": type(exc).__name__,
+            }
+        return {"status": "ok", "api": "online", "database": "online"}
 
     return app
 
