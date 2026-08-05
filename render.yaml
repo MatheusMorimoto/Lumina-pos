@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: lumina-pos
+    runtime: python
+    rootDir: meu_erp_backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: ERP_ENVIRONMENT
+        value: production
+      - key: ERP_DEBUG
+        value: "false"
+      - key: ERP_SUPABASE_TIMEOUT_SECONDS
+        value: "15"
+      - key: ERP_SUPABASE_URL
+        sync: false
+      - key: ERP_SUPABASE_KEY
+        sync: false
+      - key: ERP_SUPABASE_ANON_KEY
+        sync: false
+      - key: ERP_SUPABASE_SECRET_KEY
+        sync: false
+      - key: ERP_CORS_ORIGINS
+        sync: false
+      - key: ERP_JWT_SECRET_KEY
+        generateValue: true
