@@ -21,11 +21,24 @@ class Settings(BaseSettings):
 
     supabase_url: str = "http://localhost:54321"
     supabase_key: str = "local-development-key"
+    supabase_anon_key: str | None = None
+    supabase_secret_key: str | None = None
+    supabase_service_role_key: str | None = None
     database_url: str | None = None
 
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+
+    @property
+    def effective_anon_key(self) -> str:
+        """Chave pública usada em operações executadas como o usuário."""
+        return self.supabase_anon_key or self.supabase_key
+
+    @property
+    def effective_secret_key(self) -> str | None:
+        """Chave administrativa; nunca deve ser exposta ao cliente."""
+        return self.supabase_secret_key or self.supabase_service_role_key
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -12,6 +12,7 @@ from app.modules.estoque.router import router as estoque_router
 from app.modules.vendas.router import router as vendas_router
 from app.modules.api import router as public_api_router
 from app.modules.auth import router as auth_router
+from app.modules.account import router as account_router
 from app.shared.exceptions import register_exception_handlers
 
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(estoque_router, prefix=settings.api_v1_prefix)
     app.include_router(public_api_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
+    app.include_router(account_router, prefix="/api")
     register_exception_handlers(app)
 
     @app.get("/health", tags=["health"])

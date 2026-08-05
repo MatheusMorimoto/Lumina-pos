@@ -15,11 +15,19 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from supabase import Client
 
-from app.core.database import get_supabase_client, unwrap_response
+from app.core.database import get_authenticated_client, unwrap_response
+from app.modules.auth import access_token
 from app.shared.exceptions import BusinessRuleError, ConflictError, NotFoundError
 
 router = APIRouter(tags=["POS API"])
-Db = Annotated[Client, Depends(get_supabase_client)]
+
+
+def get_request_db(token: Annotated[str, Depends(access_token)]) -> Client:
+    """Propaga o JWT ao PostgREST para que auth.uid() e as RLS sejam aplicados."""
+    return get_authenticated_client(token)
+
+
+Db = Annotated[Client, Depends(get_request_db)]
 
 
 class ProductIn(BaseModel):
