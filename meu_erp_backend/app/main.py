@@ -47,6 +47,15 @@ def create_app() -> FastAPI:
     app.include_router(account_router, prefix="/api")
     register_exception_handlers(app)
 
+    @app.get("/", tags=["health"])
+    def root() -> dict[str, str]:
+        return {
+            "name": settings.app_name,
+            "status": "online",
+            "docs": "/docs",
+            "health": "/health/ready",
+        }
+
     @app.get("/health", tags=["health"])
     def health_check() -> dict[str, str]:
         """Liveness: confirma que o processo da API esta respondendo."""
@@ -63,7 +72,11 @@ def create_app() -> FastAPI:
                 "status": "unavailable",
                 "api": "online",
                 "database": "offline",
-                "detail": type(exc).__name__,
+                "detail": (
+                    "supabase_not_configured"
+                    if not settings.supabase_is_configured
+                    else type(exc).__name__
+                ),
             }
         return {"status": "ok", "api": "online", "database": "online"}
 

@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     def effective_secret_key(self) -> str | None:
         """Chave administrativa; nunca deve ser exposta ao cliente."""
         return self.supabase_secret_key or self.supabase_service_role_key
+
+    @computed_field
+    @property
+    def supabase_is_configured(self) -> bool:
+        """Indica se a aplicacao deixou de usar os valores locais de exemplo."""
+        return not (
+            self.supabase_url.rstrip("/") == "http://localhost:54321"
+            or self.effective_anon_key == "local-development-key"
+        )
 
     model_config = SettingsConfigDict(
         # Nao depender do diretorio usado para iniciar o servidor.

@@ -51,6 +51,10 @@ def get_authenticated_client(access_token: str) -> Client:
 
 def check_database_connection() -> None:
     """Executa uma consulta minima no PostgREST para validar banco e credenciais."""
+    if not get_settings().supabase_is_configured:
+        raise RuntimeError(
+            "ERP_SUPABASE_URL e ERP_SUPABASE_KEY nao foram configuradas no ambiente."
+        )
     get_supabase_client().table("stores").select("id").limit(1).execute()
 
 
