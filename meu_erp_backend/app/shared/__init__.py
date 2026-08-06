@@ -1,1 +1,0 @@
-"""Componentes compartilhados entre domínios."""

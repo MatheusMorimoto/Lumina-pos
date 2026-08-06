@@ -1,70 +1,69 @@
-# Sistema Integrado de Gestão Comercial (PDV / ERP)
+# Lumina POS API
 
-Backend em FastAPI organizado como monólito modular orientado a domínios. Os módulos
-de vendas, crediário e estoque têm contratos, regras de negócio e persistência
-separados, mas são publicados por uma única aplicação.
+Backend modular em Node.js 24, TypeScript, Fastify e Supabase/PostgreSQL.
 
 ## Requisitos
 
-- Python 3.11+
-- Projeto Supabase ou Supabase CLI local
-- PostgreSQL 15+ (fornecido pelo Supabase)
+- Node.js 24 LTS;
+- npm;
+- projeto Supabase ou Supabase CLI local;
+- PostgreSQL 15+ fornecido pelo Supabase.
 
 ## Instalação
 
-No diretório `meu_erp_backend`:
-
-```bash
-python -m venv .venv
+```powershell
+npm ci
+Copy-Item .env.example .env
+npm run dev
 ```
 
-Ative o ambiente no Windows:
+A API inicia em `http://127.0.0.1:8000` por padrão.
+
+## Comandos
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+npm run dev       # desenvolvimento com watch
+npm start         # produção
+npm run typecheck # validação TypeScript
+npm test          # testes Node
+npm run check     # tipos e testes
 ```
 
-Instale as dependências e configure o ambiente:
+## Organização
 
-```bash
-pip install -r requirements.txt
-```
+- `src/core`: configuração, Supabase e tratamento global de erros;
+- `src/modules`: módulos de domínio;
+- `src/shared`: funções HTTP compartilhadas;
+- `tests-node`: testes unitários e de contrato;
+- `supabase/migrations`: schema, funções transacionais, triggers e RLS.
 
-Copie `.env.example` para `.env` e informe as credenciais reais do Supabase. O
-arquivo `.env` local está ignorado pelo Git.
+O fluxo recomendado é `routes → services → repositories`. O JWT recebido na
+requisição é propagado ao cliente Supabase para manter `auth.uid()` e as políticas
+RLS. Operações administrativas usam uma chave separada, nunca exposta ao cliente.
 
-## Banco de dados
+## Endpoints de infraestrutura
 
-Com a Supabase CLI configurada, aplique a migração:
+- `GET /health`: liveness;
+- `GET /health/ready`: readiness com consulta real ao Supabase;
+- `GET /api/health/supabase`: diagnóstico administrativo opcional;
+- `GET /teste-conexao`: tela temporária de diagnóstico.
 
-```bash
-supabase db reset
-```
+Os módulos sob `/api` cobrem autenticação e cadastro PF/PJ, conta e fiscal,
+produtos, estoque, promoções, vendas, caixa, clientes, crediário, relatórios,
+entregas, conciliação e regras de adquirentes.
 
-Alternativamente, execute
-`supabase/migrations/20260728_initial_schema.sql` no SQL Editor do projeto.
+## Cadastro e senhas
 
-## Execução
+`POST /api/auth/register` aceita os contratos plano e aninhado. A senha é enviada
+diretamente ao Supabase Auth e nunca é salva em tabelas públicas, metadados,
+respostas ou logs. Quando a confirmação de e-mail está ativa, somente os dados
+cadastrais sem senha ficam temporariamente em `pending_registration`.
 
-```bash
-uvicorn app.main:app --reload
-```
+- Recuperação: `POST /api/auth/password/recover`;
+- alteração com sessão: `POST /api/auth/password/update`;
+- redefinição administrativa auditada: `POST /api/auth/admin/users/:userId/password`.
 
-Na raiz do repositorio, o comando equivalente e:
-
-```powershell
-python app.py
-```
-
-- API: `http://127.0.0.1:8000`
-- Swagger: `http://127.0.0.1:8000/docs`
-- Health check: `http://127.0.0.1:8000/health`
-- Banco de dados: `http://127.0.0.1:8000/health/ready`
-
-## Diagnostico temporario
-
-A tela `/teste-conexao` e o endpoint `/api/health/supabase` ficam desabilitados por
-padrao. Para uma validacao administrativa temporaria, configure:
+## Diagnóstico temporário
 
 ```dotenv
 ERP_DIAGNOSTIC_ENABLED=true
@@ -73,47 +72,16 @@ ERP_DIAGNOSTIC_PASSWORD=<senha-forte-e-temporaria>
 ERP_SUPABASE_EXPECTED_PROJECT_ID=gfqrqlvkqqnhzwbcozzp
 ```
 
-O acesso usa HTTP Basic, nao inclui segredos no HTML e nao armazena a senha testada.
-Depois da validacao, defina `ERP_DIAGNOSTIC_ENABLED=false` e remova as credenciais
-temporarias do ambiente.
+Desative e remova as credenciais temporárias após o uso.
 
-## Cadastro e senhas
+## Banco e deploy
 
-`POST /api/auth/register` aceita tanto o contrato plano legado quanto o contrato
-aninhado com `address`, `password_confirmation` e `legal_representative`. A senha e
-enviada por HTTPS diretamente ao Supabase Auth e nunca e gravada nas tabelas
-publicas. Ela nao e reversivel: no login, o Supabase compara a senha informada com
-o hash seguro armazenado.
+As migrations existentes foram preservadas. Para um ambiente local com Supabase:
 
-Quando a confirmacao de e-mail estiver ativa, os dados cadastrais sem a senha ficam
-temporariamente nos metadados privados do proprio usuario. No primeiro login apos
-a confirmacao, a funcao `complete_registration` cria o cadastro operacional em uma
-transacao e remove esses metadados.
-
-- Recuperacao: `POST /api/auth/password/recover`
-- Redefinicao com sessao de recuperacao: `POST /api/auth/password/update`
-- Redefinicao administrativa auditada: `POST /api/auth/admin/users/{user_id}/password`
-
-O endpoint administrativo exige um usuario `owner` ou `admin`, limita o alvo a
-mesma loja e registra a operacao em `audit_logs`. A senha e enviada somente ao
-Supabase Auth e nunca aparece no banco publico, nos logs ou na resposta.
-
-## Testes
-
-```bash
-pytest
+```powershell
+supabase db reset
 ```
 
-Os testes de serviço usam repositórios falsos e não dependem de conexão com o
-Supabase.
-
-## Organização
-
-- `app/core`: configuração, banco e segurança.
-- `app/modules`: domínios independentes (`vendas`, `crediario`, `estoque`).
-- `app/shared`: exceções e utilitários transversais.
-- `supabase/migrations`: evolução versionada do banco.
-- `tests`: testes unitários das regras de negócio.
-
-O fluxo de dependência é `router -> service -> repository`. Regras de negócio ficam
-nos serviços; detalhes do SDK do Supabase ficam isolados nos repositórios.
+O Render usa `npm ci`, `npm start` e `/health/ready`. Configure as variáveis
+`ERP_SUPABASE_URL`, `ERP_SUPABASE_ANON_KEY`, `ERP_SUPABASE_SECRET_KEY` e
+`ERP_CORS_ORIGINS` no painel do serviço.

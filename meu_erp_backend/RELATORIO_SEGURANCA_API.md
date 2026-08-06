@@ -54,7 +54,7 @@ banco e que `ERP_SUPABASE_SECRET_KEY` esta configurada somente no servidor.
 
 ```powershell
 cd meu_erp_backend
-.\.venv\Scripts\python.exe -m pytest -q
+npm run check
 ```
 
 Controles cobertos: autorizacao administrativa, isolamento por loja, ausencia da

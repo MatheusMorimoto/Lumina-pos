@@ -1,15 +1,15 @@
 services:
   - type: web
     name: lumina-pos
-    runtime: python
+    runtime: node
     rootDir: meu_erp_backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: npm ci
+    startCommand: npm start
     healthCheckPath: /health/ready
     autoDeployTrigger: commit
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.7
+      - key: NODE_VERSION
+        value: 24.18.1
       - key: ERP_ENVIRONMENT
         value: production
       - key: ERP_DEBUG

@@ -13,6 +13,11 @@ __pycache__/
 dist/
 build/
 
+# Node.js
+node_modules/
+coverage/
+*.tsbuildinfo
+
 # Testes e qualidade
 .pytest_cache/
 .coverage
