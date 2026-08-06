@@ -1,5 +1,7 @@
 """Configurações tipadas carregadas do ambiente e do arquivo .env."""
 
+import base64
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -25,8 +27,7 @@ class Settings(BaseSettings):
     )
 
     supabase_url: str = "http://localhost:54321"
-    supabase_key: str = "local-development-key"
-    supabase_anon_key: str | None = None
+    supabase_anon_key: str = "local-development-key"
     supabase_secret_key: str | None = None
     supabase_service_role_key: str | None = None
     database_url: str | None = None
@@ -48,7 +49,7 @@ class Settings(BaseSettings):
     @property
     def effective_anon_key(self) -> str:
         """Chave pública usada em operações executadas como o usuário."""
-        return self.supabase_anon_key or self.supabase_key
+        return self.supabase_anon_key
 
     @property
     def effective_secret_key(self) -> str | None:
@@ -78,6 +79,22 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip().startswith("["):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("supabase_anon_key")
+    @classmethod
+    def reject_admin_key_as_anon(cls, value: str) -> str:
+        """Impede que uma chave administrativa seja usada no cliente com RLS."""
+        if value.startswith("sb_secret_"):
+            raise ValueError("ERP_SUPABASE_ANON_KEY nao pode receber uma chave secret.")
+        try:
+            payload = value.split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            role = json.loads(base64.urlsafe_b64decode(payload)).get("role")
+        except (IndexError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            role = None
+        if role == "service_role":
+            raise ValueError("ERP_SUPABASE_ANON_KEY nao pode receber uma chave service_role.")
         return value
 
 

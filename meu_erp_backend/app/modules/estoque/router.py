@@ -5,7 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.database import get_supabase_client
+from app.core.database import get_authenticated_client
+from app.modules.auth import access_token
 from app.modules.estoque.repository import EstoqueRepository
 from app.modules.estoque.schemas import (
     BaixaEstoqueCreate,
@@ -19,8 +20,8 @@ from app.modules.estoque.services import EstoqueService
 router = APIRouter(prefix="/estoque", tags=["Estoque e Catálogo"])
 
 
-def get_service() -> EstoqueService:
-    return EstoqueService(EstoqueRepository(get_supabase_client()))
+def get_service(token: Annotated[str, Depends(access_token)]) -> EstoqueService:
+    return EstoqueService(EstoqueRepository(get_authenticated_client(token)))
 
 
 Service = Annotated[EstoqueService, Depends(get_service)]

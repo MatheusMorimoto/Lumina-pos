@@ -122,8 +122,8 @@ begin
   insert into stores(name,document,person_type) values(
     v_name, case when v_type='company' then payload->>'cnpj' else payload->>'cpf' end, v_type
   ) returning id into v_store_id;
-  insert into users(id,store_id,name,email,password_hash,phone,role,active)
-    values(v_auth_id,v_store_id,v_name,v_email,null,payload->>'phone','owner',true);
+  insert into users(id,store_id,name,email,phone,role,active)
+    values(v_auth_id,v_store_id,v_name,v_email,payload->>'phone','owner',true);
   if v_type='company' then
     insert into company_registrations(
       store_id,cnpj,legal_name,trade_name,state_registration,municipal_registration,

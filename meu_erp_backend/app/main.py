@@ -8,9 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import check_database_connection
-from app.modules.crediario.router import router as crediario_router
-from app.modules.estoque.router import router as estoque_router
-from app.modules.vendas.router import router as vendas_router
 from app.modules.api import router as public_api_router
 from app.modules.auth import router as auth_router
 from app.modules.account import router as account_router
@@ -43,9 +40,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(vendas_router, prefix=settings.api_v1_prefix)
-    app.include_router(crediario_router, prefix=settings.api_v1_prefix)
-    app.include_router(estoque_router, prefix=settings.api_v1_prefix)
+    # Os antigos endpoints /api/v1 usavam um cliente compartilhado sem o JWT
+    # da requisicao. Eles permanecem fora da aplicacao ate serem migrados para
+    # o mesmo modelo autenticado e protegido por RLS usado em /api.
     app.include_router(public_api_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(account_router, prefix="/api")

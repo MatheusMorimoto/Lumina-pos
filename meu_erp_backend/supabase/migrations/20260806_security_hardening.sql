@@ -1,24 +1,23 @@
 begin;
 
--- Complementos do contrato PF/PJ. Senhas permanecem exclusivamente em auth.users.
-alter table individual_registrations
-  add column if not exists social_name varchar(200),
-  add column if not exists municipal_registration varchar(40),
-  add column if not exists observations text;
+-- A tabela users e um perfil operacional. Credenciais permanecem somente em
+-- auth.users, e usuarios autenticados nao podem alterar loja, funcao ou status.
+revoke insert, delete on table public.users from anon, authenticated;
+revoke update on table public.users from anon, authenticated;
+grant select on table public.users to authenticated;
+grant update (name, phone) on table public.users to authenticated;
 
-alter table company_registrations
-  add column if not exists legal_representative_name varchar(200),
-  add column if not exists legal_representative_cpf varchar(11),
-  add column if not exists observations text;
+drop policy if exists users_self_or_admin_update on public.users;
+create policy users_self_profile_update
+  on public.users
+  for update
+  to authenticated
+  using (id = (select auth.uid()) and active)
+  with check (id = (select auth.uid()) and active and is_store_member(store_id));
 
-alter table company_registrations drop constraint if exists company_legal_representative_cpf_check;
-alter table company_registrations add constraint company_legal_representative_cpf_check
-  check (legal_representative_cpf is null or legal_representative_cpf ~ '^[0-9]{11}$');
-
-alter table store_addresses
-  add column if not exists country char(2) not null default 'BR';
-
-create or replace function complete_registration(payload jsonb)
+-- Reinstala o cadastro sem qualquer dependencia de password_hash. Esta coluna
+-- pode nao existir: a senha pertence exclusivamente ao Supabase Auth.
+create or replace function public.complete_registration(payload jsonb)
 returns table("user" jsonb, store jsonb)
 language plpgsql security definer set search_path = public as $$
 declare
@@ -30,8 +29,7 @@ begin
   v_type := (payload->>'person_type')::person_type;
   v_email := lower(coalesce(auth.jwt()->>'email',''));
   if v_type='company' then
-    v_name := nullif(trim(payload->>'trade_name'),'');
-    if v_name is null then v_name := payload->>'legal_name'; end if;
+    v_name := coalesce(nullif(trim(payload->>'trade_name'),''), payload->>'legal_name');
     if exists(select 1 from company_registrations where cnpj=payload->>'cnpj') then
       raise exception 'document_already_registered';
     end if;
@@ -92,7 +90,14 @@ begin
     jsonb_build_object('id',v_store_id,'name',v_name,'person_type',v_type);
 end $$;
 
-revoke all on function complete_registration(jsonb) from public;
-grant execute on function complete_registration(jsonb) to authenticated;
+-- As funcoes SECURITY DEFINER nunca devem ser executaveis por anon/public.
+revoke all on function public.complete_registration(jsonb) from public, anon;
+grant execute on function public.complete_registration(jsonb) to authenticated;
+revoke all on function public.review_fiscal_profile(tax_regime, text) from public, anon;
+grant execute on function public.review_fiscal_profile(tax_regime, text) to authenticated;
+revoke all on function public.finalize_sale(uuid, jsonb, text) from public, anon;
+grant execute on function public.finalize_sale(uuid, jsonb, text) to authenticated;
+revoke all on function public.pay_receivable(uuid, numeric, text, uuid, timestamptz) from public, anon;
+grant execute on function public.pay_receivable(uuid, numeric, text, uuid, timestamptz) to authenticated;
 
 commit;

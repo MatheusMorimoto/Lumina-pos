@@ -22,13 +22,6 @@ def _client_options(*, headers: dict[str, str] | None = None) -> SyncClientOptio
 
 
 @lru_cache
-def get_supabase_client() -> Client:
-    """Cria o cliente compartilhado do Supabase sob demanda."""
-    settings = get_settings()
-    return create_client(settings.supabase_url, settings.supabase_key, _client_options())
-
-
-@lru_cache
 def get_supabase_anon_client() -> Client:
     settings = get_settings()
     return create_client(settings.supabase_url, settings.effective_anon_key, _client_options())
@@ -53,7 +46,7 @@ def check_database_connection() -> None:
     """Executa uma consulta minima no PostgREST para validar banco e credenciais."""
     if not get_settings().supabase_is_configured:
         raise RuntimeError(
-            "ERP_SUPABASE_URL e ERP_SUPABASE_KEY nao foram configuradas no ambiente."
+            "ERP_SUPABASE_URL e ERP_SUPABASE_ANON_KEY nao foram configuradas no ambiente."
         )
     get_supabase_anon_client().table("stores").select("id").limit(1).execute()
 

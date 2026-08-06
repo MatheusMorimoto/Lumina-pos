@@ -5,7 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.database import get_supabase_client
+from app.core.database import get_authenticated_client
+from app.modules.auth import access_token
 from app.modules.vendas.repository import VendasRepository
 from app.modules.vendas.schemas import (
     AberturaCaixaCreate,
@@ -21,8 +22,8 @@ from app.modules.vendas.services import VendasService
 router = APIRouter(prefix="/vendas", tags=["Vendas e PDV"])
 
 
-def get_service() -> VendasService:
-    return VendasService(VendasRepository(get_supabase_client()))
+def get_service(token: Annotated[str, Depends(access_token)]) -> VendasService:
+    return VendasService(VendasRepository(get_authenticated_client(token)))
 
 
 Service = Annotated[VendasService, Depends(get_service)]

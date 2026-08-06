@@ -5,7 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.core.database import get_supabase_client
+from app.core.database import get_authenticated_client
+from app.modules.auth import access_token
 from app.modules.crediario.repository import CrediarioRepository
 from app.modules.crediario.schemas import (
     BaixaParcelaCreate,
@@ -19,8 +20,8 @@ from app.modules.crediario.services import CrediarioService
 router = APIRouter(prefix="/crediario", tags=["Crediário"])
 
 
-def get_service() -> CrediarioService:
-    return CrediarioService(CrediarioRepository(get_supabase_client()))
+def get_service(token: Annotated[str, Depends(access_token)]) -> CrediarioService:
+    return CrediarioService(CrediarioRepository(get_authenticated_client(token)))
 
 
 Service = Annotated[CrediarioService, Depends(get_service)]
