@@ -1,4 +1,5 @@
 """Autenticacao dos operadores e diagnostico seguro do resultado do login."""
+import logging
 from collections import defaultdict, deque
 from threading import Lock
 from time import monotonic
@@ -12,14 +13,22 @@ from supabase import Client
 from app.core.config import get_settings
 from app.core.database import (
     get_authenticated_client,
+    get_supabase_admin_client,
     get_supabase_anon_client,
     unwrap_response,
 )
 from app.modules.registration import RegistrationIn, RegistrationService
-from app.shared.exceptions import AuthenticationError, RateLimitError, UpstreamError
+from app.shared.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    NotFoundError,
+    RateLimitError,
+    UpstreamError,
+)
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 bearer = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 _attempts: dict[str, deque[float]] = defaultdict(deque)
 _attempts_lock = Lock()
 
@@ -47,6 +56,10 @@ class PasswordUpdateIn(BaseModel):
         ):
             raise ValueError("A senha deve conter letras e numeros.")
         return self
+
+
+class AdminPasswordResetIn(PasswordUpdateIn):
+    """Nova senha definida por um administrador; nunca e persistida pela API."""
 
 
 def _request_key(request: Request, email: str) -> str:
@@ -304,6 +317,56 @@ def current_user(token: Annotated[str, Depends(access_token)]) -> dict[str, Any]
     except Exception as exc:
         raise AuthenticationError("Sessao invalida ou expirada.") from exc
     raise AuthenticationError("Sessao invalida ou expirada.")
+
+
+@router.post("/admin/users/{user_id}/password")
+def admin_reset_password(
+    user_id: str,
+    data: AdminPasswordResetIn,
+    token: Annotated[str, Depends(access_token)],
+    actor: Annotated[dict[str, Any], Depends(current_user)],
+) -> dict[str, str]:
+    """Permite que owner/admin redefina a senha de um usuario da mesma loja."""
+    if actor.get("role") not in {"owner", "admin"}:
+        raise AuthorizationError("Somente administradores podem redefinir senhas.")
+    store_id = actor.get("store_id")
+    if not store_id:
+        raise AuthorizationError("Administrador sem loja operacional associada.")
+
+    try:
+        client = get_authenticated_client(token)
+        target = unwrap_response(
+            client.table("users")
+            .select("id,store_id")
+            .eq("id", user_id)
+            .eq("store_id", store_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise UpstreamError("Nao foi possivel validar o usuario no Supabase.") from exc
+    if not target:
+        raise NotFoundError("Usuario nao encontrado nesta loja.")
+
+    admin_client = get_supabase_admin_client()
+    try:
+        admin_client.auth.admin.update_user_by_id(user_id, {"password": data.password})
+    except Exception as exc:
+        raise UpstreamError("Nao foi possivel redefinir a senha no Supabase.") from exc
+
+    try:
+        admin_client.table("audit_logs").insert({
+            "store_id": store_id,
+            "user_id": actor["id"],
+            "action": "password_reset_by_admin",
+            "entity_type": "user",
+            "entity_id": user_id,
+            "data": {"credential_exposed": False},
+        }).execute()
+    except Exception:
+        # A senha ja foi redefinida no Auth; nunca a registre durante o tratamento.
+        logger.exception("Falha ao auditar redefinicao administrativa de senha")
+    return {"message": "Senha redefinida com sucesso."}
 
 
 @router.get("/me")

@@ -41,7 +41,5 @@ services:
         value: "300"
       - key: ERP_PASSWORD_RESET_REDIRECT_URL
         sync: false
-      - key: ERP_LEGACY_PASSWORD_LOGIN_ENABLED
-        value: "false"
       - key: ERP_JWT_SECRET_KEY
         generateValue: true

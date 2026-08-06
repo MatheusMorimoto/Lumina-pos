@@ -40,11 +40,7 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = Field(default=5, ge=1, le=100)
     login_rate_limit_window_seconds: int = Field(default=300, ge=10, le=3600)
 
-    jwt_secret_key: str = "change-me-in-production"
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
     password_reset_redirect_url: str | None = None
-    legacy_password_login_enabled: bool = False
 
     @property
     def effective_anon_key(self) -> str:

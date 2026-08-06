@@ -92,8 +92,11 @@ transacao e remove esses metadados.
 
 - Recuperacao: `POST /api/auth/password/recover`
 - Redefinicao com sessao de recuperacao: `POST /api/auth/password/update`
-- Login legado por hash local: desabilitado por padrao com
-  `ERP_LEGACY_PASSWORD_LOGIN_ENABLED=false`
+- Redefinicao administrativa auditada: `POST /api/auth/admin/users/{user_id}/password`
+
+O endpoint administrativo exige um usuario `owner` ou `admin`, limita o alvo a
+mesma loja e registra a operacao em `audit_logs`. A senha e enviada somente ao
+Supabase Auth e nunca aparece no banco publico, nos logs ou na resposta.
 
 ## Testes
 

@@ -28,6 +28,11 @@ class AuthenticationError(ApplicationError):
     code = "authentication_error"
 
 
+class AuthorizationError(ApplicationError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "authorization_error"
+
+
 class ConflictError(ApplicationError):
     status_code = status.HTTP_409_CONFLICT
     code = "conflict"
