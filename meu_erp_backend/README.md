@@ -77,6 +77,24 @@ O acesso usa HTTP Basic, nao inclui segredos no HTML e nao armazena a senha test
 Depois da validacao, defina `ERP_DIAGNOSTIC_ENABLED=false` e remova as credenciais
 temporarias do ambiente.
 
+## Cadastro e senhas
+
+`POST /api/auth/register` aceita tanto o contrato plano legado quanto o contrato
+aninhado com `address`, `password_confirmation` e `legal_representative`. A senha e
+enviada por HTTPS diretamente ao Supabase Auth e nunca e gravada nas tabelas
+publicas. Ela nao e reversivel: no login, o Supabase compara a senha informada com
+o hash seguro armazenado.
+
+Quando a confirmacao de e-mail estiver ativa, os dados cadastrais sem a senha ficam
+temporariamente nos metadados privados do proprio usuario. No primeiro login apos
+a confirmacao, a funcao `complete_registration` cria o cadastro operacional em uma
+transacao e remove esses metadados.
+
+- Recuperacao: `POST /api/auth/password/recover`
+- Redefinicao com sessao de recuperacao: `POST /api/auth/password/update`
+- Login legado por hash local: desabilitado por padrao com
+  `ERP_LEGACY_PASSWORD_LOGIN_ENABLED=false`
+
 ## Testes
 
 ```bash

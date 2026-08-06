@@ -7,7 +7,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from supabase import Client
 
 from app.core.database import (
@@ -34,6 +34,29 @@ class TaxRegime(StrEnum):
     LUCRO_REAL = "lucro_real"
     PESSOA_FISICA = "pessoa_fisica"
     NAO_INFORMADO = "nao_informado"
+
+
+class AddressIn(BaseModel):
+    postal_code: str
+    street: str
+    number: str
+    complement: str | None = None
+    district: str
+    city: str
+    state: str
+
+
+class LegalRepresentativeIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    cpf: str
+
+    @field_validator("cpf")
+    @classmethod
+    def normalize_and_validate_cpf(cls, value: str) -> str:
+        value = digits(value)
+        if not valid_cpf(value):
+            raise ValueError("CPF do responsavel legal invalido.")
+        return value
 
 
 def digits(value: str) -> str:
@@ -72,9 +95,12 @@ def valid_cnpj(value: str) -> bool:
 
 
 class RegistrationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     person_type: PersonType
     email: str
     password: str = Field(min_length=8, max_length=128)
+    password_confirmation: str | None = Field(default=None, min_length=8, max_length=128)
     phone: str
     postal_code: str
     street: str = Field(min_length=2, max_length=200)
@@ -98,12 +124,42 @@ class RegistrationIn(BaseModel):
     regime_source: str | None = None
     data_manually_corrected: bool = False
     manually_reviewed: bool = False
+    legal_representative_name: str | None = Field(default=None, max_length=200)
+    legal_representative_cpf: str | None = None
+    social_name: str | None = Field(default=None, max_length=200)
+    observations: str | None = Field(default=None, max_length=2000)
 
     cpf: str | None = None
     full_name: str | None = Field(default=None, max_length=200)
     birth_date: date | None = None
     identity_document: str | None = None
     tax_regime: TaxRegime = TaxRegime.NAO_INFORMADO
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_report_contract(cls, raw: Any) -> Any:
+        """Aceita o JSON aninhado do relatorio sem quebrar o contrato plano anterior."""
+        if not isinstance(raw, dict):
+            return raw
+        data = dict(raw)
+        if data.get("name") and not data.get("full_name"):
+            data["full_name"] = data.pop("name")
+        address = data.pop("address", None)
+        if isinstance(address, dict):
+            data.setdefault("postal_code", address.get("postal_code"))
+            data.setdefault("street", address.get("street"))
+            data.setdefault("address_number", address.get("number"))
+            data.setdefault("complement", address.get("complement"))
+            data.setdefault("neighborhood", address.get("district"))
+            data.setdefault("city", address.get("city"))
+            data.setdefault("state", address.get("state"))
+        representative = data.pop("legal_representative", None)
+        if isinstance(representative, dict):
+            data.setdefault("legal_representative_name", representative.get("name"))
+            data.setdefault("legal_representative_cpf", representative.get("cpf"))
+        if data.get("cnae") and not data.get("main_cnae_code"):
+            data["main_cnae_code"] = data.pop("cnae")
+        return data
 
     @field_validator("email")
     @classmethod
@@ -113,7 +169,7 @@ class RegistrationIn(BaseModel):
             raise ValueError("E-mail inválido.")
         return value
 
-    @field_validator("phone", "postal_code", "cpf", "cnpj")
+    @field_validator("phone", "postal_code", "cpf", "cnpj", "legal_representative_cpf")
     @classmethod
     def normalize_numbers(cls, value: str | None) -> str | None:
         return digits(value) if value is not None else None
@@ -142,11 +198,23 @@ class RegistrationIn(BaseModel):
 
     @model_validator(mode="after")
     def validate_person(self) -> "RegistrationIn":
+        if self.password_confirmation is not None and self.password != self.password_confirmation:
+            raise ValueError("As senhas nao coincidem.")
+        if not re.search(r"[A-Za-z]", self.password) or not re.search(r"\d", self.password):
+            raise ValueError("A senha deve conter letras e numeros.")
         if self.person_type == PersonType.COMPANY:
             if not self.cnpj or not valid_cnpj(self.cnpj):
                 raise ValueError("CNPJ inválido.")
             if not self.legal_name or len(self.legal_name.strip()) < 2:
                 raise ValueError("Razão social é obrigatória.")
+            if not self.trade_name or len(self.trade_name.strip()) < 2:
+                raise ValueError("Nome fantasia e obrigatorio.")
+            if not self.legal_representative_name:
+                raise ValueError("Responsavel legal e obrigatorio.")
+            if not self.legal_representative_cpf or not valid_cpf(
+                self.legal_representative_cpf
+            ):
+                raise ValueError("CPF do responsavel legal invalido.")
             if self.tax_regime == TaxRegime.PESSOA_FISICA:
                 raise ValueError("Regime tributário incompatível com pessoa jurídica.")
         else:
@@ -154,6 +222,8 @@ class RegistrationIn(BaseModel):
                 raise ValueError("CPF inválido.")
             if not self.full_name or len(self.full_name.strip()) < 2:
                 raise ValueError("Nome completo é obrigatório.")
+            if not self.birth_date:
+                raise ValueError("Data de nascimento e obrigatoria.")
             if self.birth_date and self.birth_date > date.today():
                 raise ValueError("Data de nascimento não pode estar no futuro.")
             if self.tax_regime not in {TaxRegime.PESSOA_FISICA, TaxRegime.NAO_INFORMADO}:
@@ -161,7 +231,11 @@ class RegistrationIn(BaseModel):
         return self
 
     def registration_payload(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude={"email", "password"}, exclude_none=True)
+        return self.model_dump(
+            mode="json",
+            exclude={"email", "password", "password_confirmation"},
+            exclude_none=True,
+        )
 
 
 class RegistrationService:
@@ -172,7 +246,15 @@ class RegistrationService:
         created_user_id: str | None = None
         try:
             response = self.auth_client.auth.sign_up(
-                {"email": data.email, "password": data.password}
+                {
+                    "email": data.email,
+                    "password": data.password,
+                    "options": {
+                        # Permite concluir o perfil no primeiro login apos confirmar o e-mail.
+                        # A senha nunca faz parte dos metadados.
+                        "data": {"pending_registration": data.registration_payload()}
+                    },
+                }
             )
             user = response.user
             if not user:
@@ -187,11 +269,8 @@ class RegistrationService:
                     "message": "Confirme o e-mail para concluir o cadastro.",
                 }
 
-            client = get_authenticated_client(session.access_token)
-            result = unwrap_response(
-                client.rpc(
-                    "complete_registration", {"payload": data.registration_payload()}
-                ).execute()
+            result = self.complete_with_token(
+                session.access_token, data.registration_payload()
             )
             if not result:
                 raise UpstreamError("Não foi possível concluir o cadastro.")
@@ -234,6 +313,21 @@ class RegistrationService:
             raise UpstreamError(
                 "O Supabase recusou o cadastro. Consulte os logs da API no Render."
             ) from exc
+
+    @staticmethod
+    def complete_with_token(token: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        client = get_authenticated_client(token)
+        result = unwrap_response(
+            client.rpc("complete_registration", {"payload": payload}).execute()
+        )
+        if result:
+            # Remove os dados cadastrais temporarios do Auth apos a transacao publica.
+            try:
+                client.auth.update_user({"data": {"pending_registration": None}})
+            except Exception:
+                # A transacao principal ja foi concluida; a limpeza pode ser repetida depois.
+                pass
+        return result
 
     @staticmethod
     def _compensate(user_id: str) -> None:

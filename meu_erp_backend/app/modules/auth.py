@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from supabase import Client
 
 from app.core.config import get_settings
@@ -30,6 +30,25 @@ class LoginIn(BaseModel):
     email: str
     password: str
     store_id: str | None = None
+
+
+class PasswordRecoveryIn(BaseModel):
+    email: str
+
+
+class PasswordUpdateIn(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+    password_confirmation: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_passwords(self) -> "PasswordUpdateIn":
+        if self.password != self.password_confirmation:
+            raise ValueError("As senhas nao coincidem.")
+        if not any(char.isalpha() for char in self.password) or not any(
+            char.isdigit() for char in self.password
+        ):
+            raise ValueError("A senha deve conter letras e numeros.")
+        return self
 
 
 def _request_key(request: Request, email: str) -> str:
@@ -66,29 +85,41 @@ def _mask_cpf(value: str | None) -> str | None:
     return f"{digits[:3]}.***.***-{digits[-2:]}"
 
 
+def _mask_cnpj(value: str | None) -> str | None:
+    digits = "".join(char for char in (value or "") if char.isdigit())
+    if len(digits) != 14:
+        return None
+    return f"{digits[:2]}.***.***/{digits[8:12]}-{digits[-2:]}"
+
+
 def _profile_for_token(token: str, user_id: str) -> dict[str, Any]:
     """Consulta o perfil operacional aplicando as RLS do usuario autenticado."""
     try:
         client = get_authenticated_client(token)
         users = unwrap_response(
             client.table("users")
-            .select("id,name,email,active,store_id,role")
+            .select("id,name,email,active,store_id,role,stores(person_type)")
             .eq("id", user_id).limit(1).execute()
         )
         if not users:
             return {"found": False, "user_id": user_id, "lookup_status": "not_found"}
         user = users[0]
+        person_type = (user.get("stores") or {}).get("person_type")
+        table = "company_registrations" if person_type == "company" else "individual_registrations"
+        fields = "legal_name,trade_name,cnpj" if person_type == "company" else "full_name,cpf"
         registrations = unwrap_response(
-            client.table("individual_registrations")
-            .select("full_name,cpf")
+            client.table(table).select(fields)
             .eq("store_id", user["store_id"]).limit(1).execute()
         )
         registration = registrations[0] if registrations else {}
         return {
             "found": True,
             "user_id": user_id,
-            "name": registration.get("full_name") or user.get("name"),
+            "name": registration.get("trade_name") or registration.get("full_name")
+            or registration.get("legal_name") or user.get("name"),
             "cpf_masked": _mask_cpf(registration.get("cpf")),
+            "cnpj_masked": _mask_cnpj(registration.get("cnpj")),
+            "person_type": person_type,
             "store_id": user.get("store_id"),
             "role": user.get("role"),
             "active": user.get("active", True),
@@ -119,6 +150,26 @@ def _raise_safe_auth_error(exc: Exception | None) -> None:
     raise AuthenticationError("E-mail ou senha invalidos.")
 
 
+def _complete_pending_profile(auth_user: Any, token: str) -> None:
+    metadata = getattr(auth_user, "user_metadata", None) or {}
+    pending = metadata.get("pending_registration")
+    if not isinstance(pending, dict):
+        return
+
+
+def access_token(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> str:
+    if not credentials:
+        raise AuthenticationError("Token de acesso obrigatorio.")
+    return credentials.credentials
+    try:
+        RegistrationService.complete_with_token(token, pending)
+    except Exception:
+        # O login permanece valido; o cliente recebe registration_complete=false.
+        return
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(data: RegistrationIn, response: Response) -> dict[str, Any]:
     response_status, payload = RegistrationService().register(data)
@@ -130,7 +181,6 @@ def register(data: RegistrationIn, response: Response) -> dict[str, Any]:
 def login(
     data: LoginIn,
     request: Request,
-    db: Annotated[Client, Depends(get_supabase_client)],
 ) -> dict[str, Any]:
     email = data.email.strip().lower()
     key = _request_key(request, email)
@@ -144,6 +194,8 @@ def login(
             _clear_attempts(key)
             auth_user = auth_response.user or auth_response.session.user
             user_id = str(auth_user.id)
+            _complete_pending_profile(auth_user, auth_response.session.access_token)
+            profile = _profile_for_token(auth_response.session.access_token, user_id)
             return {
                 "access_token": auth_response.session.access_token,
                 "refresh_token": auth_response.session.refresh_token,
@@ -160,13 +212,31 @@ def login(
                     ),
                     "token_received": True,
                 },
-                "profile": _profile_for_token(auth_response.session.access_token, user_id),
+                "profile": profile,
+                "user": {
+                    "id": user_id,
+                    "email": getattr(auth_user, "email", email),
+                    "person_type": profile.get("person_type"),
+                    "display_name": profile.get("name"),
+                    "account_id": profile.get("store_id"),
+                    "role": profile.get("role"),
+                    "registration_complete": profile.get("found", False),
+                },
             }
     except Exception as exc:
         auth_error = exc
 
+    if not get_settings().legacy_password_login_enabled:
+        _record_failure(key)
+        if auth_error and _looks_like_upstream_failure(auth_error):
+            raise UpstreamError(
+                "O servico de autenticacao esta temporariamente indisponivel."
+            ) from None
+        _raise_safe_auth_error(auth_error)
+
     try:
         # Compatibilidade temporaria com usuarios que ainda possuem hash local.
+        db = get_supabase_client()
         query = db.table("users").select("*").eq("email", email).eq("active", True)
         if data.store_id:
             query = query.eq("store_id", data.store_id)
@@ -205,15 +275,42 @@ def login(
             "role": user.get("role"), "active": user.get("active", True),
             "lookup_status": "legacy",
         },
+        "user": {
+            "id": user["id"], "email": user["email"],
+            "person_type": None, "display_name": user.get("name"),
+            "account_id": user.get("store_id"), "role": user.get("role"),
+            "registration_complete": True,
+        },
     }
 
 
-def access_token(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-) -> str:
-    if not credentials:
-        raise AuthenticationError("Token de acesso obrigatório.")
-    return credentials.credentials
+@router.post("/password/recover", status_code=status.HTTP_202_ACCEPTED)
+def recover_password(data: PasswordRecoveryIn) -> dict[str, str]:
+    """Envia recuperacao sem revelar se o e-mail esta cadastrado."""
+    email = data.email.strip().lower()
+    options: dict[str, str] = {}
+    redirect = get_settings().password_reset_redirect_url
+    if redirect:
+        options["redirect_to"] = redirect
+    try:
+        auth_api = get_supabase_anon_client().auth
+        if options:
+            auth_api.reset_password_for_email(email, options)
+        else:
+            auth_api.reset_password_for_email(email)
+    except Exception:
+        # Resposta uniforme evita enumeracao de contas.
+        pass
+    return {"message": "Se o e-mail estiver cadastrado, enviaremos as instrucoes."}
+
+
+@router.post("/password/update")
+def update_password(data: PasswordUpdateIn, token: Annotated[str, Depends(access_token)]) -> dict[str, str]:
+    try:
+        get_authenticated_client(token).auth.update_user({"password": data.password})
+    except Exception as exc:
+        raise AuthenticationError("Sessao invalida ou expirada para redefinir a senha.") from exc
+    return {"message": "Senha atualizada com sucesso."}
 
 
 def current_user(token: Annotated[str, Depends(access_token)]) -> dict[str, Any]:
