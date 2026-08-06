@@ -107,6 +107,18 @@ def _looks_like_upstream_failure(exc: Exception) -> bool:
     ))
 
 
+def _raise_safe_auth_error(exc: Exception | None) -> None:
+    """Traduz erros conhecidos do GoTrue sem devolver detalhes internos."""
+    message = str(exc or "").lower()
+    if "email not confirmed" in message or "email_not_confirmed" in message:
+        raise AuthenticationError("E-mail ainda nao confirmado.")
+    if any(term in message for term in ("banned", "blocked", "user_banned")):
+        raise AuthenticationError("Conta temporariamente bloqueada.")
+    if any(term in message for term in ("invalid api key", "invalid api-key", "api key")):
+        raise UpstreamError("A autenticacao do Supabase nao esta configurada corretamente.")
+    raise AuthenticationError("E-mail ou senha invalidos.")
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(data: RegistrationIn, response: Response) -> dict[str, Any]:
     response_status, payload = RegistrationService().register(data)
@@ -175,7 +187,7 @@ def login(
             raise UpstreamError(
                 "O servico de autenticacao esta temporariamente indisponivel."
             ) from None
-        raise AuthenticationError("E-mail ou senha invalidos.")
+        _raise_safe_auth_error(auth_error)
     user = rows[0]
     token = create_access_token(user["id"], {"store_id": user["store_id"], "role": user["role"]})
     _clear_attempts(key)
@@ -218,14 +230,28 @@ def current_user(token: Annotated[str, Depends(access_token)]) -> dict[str, Any]
                 .limit(1)
                 .execute()
             )
-            if not rows or not rows[0].get("active", True):
-                raise AuthenticationError("Cadastro de usuário não está ativo.")
+            if not rows:
+                return {
+                    "id": str(auth_user.id),
+                    "email": getattr(auth_user, "email", None),
+                    "name": None,
+                    "phone": None,
+                    "role": None,
+                    "store": None,
+                    "store_id": None,
+                    "registration_complete": False,
+                    "profile_found": False,
+                    "access_token": token,
+                }
+            if not rows[0].get("active", True):
+                raise AuthenticationError("Cadastro de usuario nao esta ativo.")
             row = rows[0]
             return {
                 "id": row["id"], "email": row["email"], "name": row["name"],
                 "phone": row.get("phone"), "role": row["role"],
                 "store": row.get("stores"), "store_id": row["store_id"],
-                "registration_complete": bool(row.get("stores")), "access_token": token,
+                "registration_complete": bool(row.get("stores")),
+                "profile_found": True, "access_token": token,
             }
     except AuthenticationError:
         raise

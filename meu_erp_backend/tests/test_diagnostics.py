@@ -35,6 +35,11 @@ class AuthClient:
         )
         return SimpleNamespace(session=session, user=user)
 
+    def get_user(self, _token):
+        return SimpleNamespace(user=SimpleNamespace(
+            id="00000000-0000-0000-0000-000000000001", email="user@example.com"
+        ))
+
     def table(self, name):
         if name == "users" and self.profile:
             return Query([{
@@ -45,6 +50,17 @@ class AuthClient:
         if name == "individual_registrations" and self.profile:
             return Query([{"full_name": "Pessoa Teste", "cpf": "52998224725"}])
         return Query([])
+
+
+class RejectedAuthClient:
+    auth = None
+
+    def __init__(self, message):
+        self.message = message
+        self.auth = self
+
+    def sign_in_with_password(self, _credentials):
+        raise RuntimeError(self.message)
 
 
 def enable_diagnostics():
@@ -106,3 +122,32 @@ def test_login_succeeds_when_operational_profile_is_missing(monkeypatch):
     assert response.status_code == 200
     assert response.json()["authentication"]["success"] is True
     assert response.json()["profile"]["found"] is False
+
+
+def test_login_reports_unconfirmed_email_safely(monkeypatch):
+    auth._attempts.clear()
+    monkeypatch.setattr(
+        auth, "get_supabase_anon_client", lambda: RejectedAuthClient("Email not confirmed")
+    )
+    app.dependency_overrides[auth.get_supabase_client] = lambda: AuthClient(profile=False)
+    try:
+        response = TestClient(app).post(
+            "/api/auth/login",
+            json={"email": "pending@example.com", "password": "not-logged"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "E-mail ainda nao confirmado."
+
+
+def test_me_accepts_supabase_user_without_operational_profile(monkeypatch):
+    fake = AuthClient(profile=False)
+    monkeypatch.setattr(auth, "get_authenticated_client", lambda _token: fake)
+    response = TestClient(app).get(
+        "/api/auth/me", headers={"Authorization": "Bearer valid-supabase-token"}
+    )
+    assert response.status_code == 200
+    assert response.json()["registration_complete"] is False
+    assert response.json()["profile_found"] is False
+    assert "access_token" not in response.json()
