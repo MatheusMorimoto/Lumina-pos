@@ -55,7 +55,15 @@ def check_database_connection() -> None:
         raise RuntimeError(
             "ERP_SUPABASE_URL e ERP_SUPABASE_KEY nao foram configuradas no ambiente."
         )
-    get_supabase_client().table("stores").select("id").limit(1).execute()
+    get_supabase_anon_client().table("stores").select("id").limit(1).execute()
+
+
+def supabase_project_id() -> str | None:
+    """Extrai apenas o identificador publico do projeto configurado."""
+    host = get_settings().supabase_url.removeprefix("https://").removeprefix("http://")
+    host = host.split("/", 1)[0].split(":", 1)[0]
+    suffix = ".supabase.co"
+    return host[: -len(suffix)] if host.endswith(suffix) else None
 
 
 def unwrap_response(response: Any) -> list[dict[str, Any]]:

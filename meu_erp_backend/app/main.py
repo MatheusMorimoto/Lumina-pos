@@ -14,6 +14,8 @@ from app.modules.vendas.router import router as vendas_router
 from app.modules.api import router as public_api_router
 from app.modules.auth import router as auth_router
 from app.modules.account import router as account_router
+from app.modules.diagnostics import api_router as diagnostics_api_router
+from app.modules.diagnostics import page_router as diagnostics_page_router
 from app.shared.exceptions import register_exception_handlers
 
 
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
     app.include_router(public_api_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(account_router, prefix="/api")
+    app.include_router(diagnostics_api_router, prefix="/api")
+    app.include_router(diagnostics_page_router)
     register_exception_handlers(app)
 
     @app.get("/", tags=["health"])

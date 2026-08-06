@@ -33,6 +33,16 @@ class ConflictError(ApplicationError):
     code = "conflict"
 
 
+class RateLimitError(ApplicationError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limit_exceeded"
+
+
+class UpstreamError(ApplicationError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "supabase_unavailable"
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Registra o formato consistente de erros da aplicação."""
 

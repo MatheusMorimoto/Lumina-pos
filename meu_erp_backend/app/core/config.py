@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     database_url: str | None = None
     supabase_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    supabase_expected_project_id: str = "gfqrqlvkqqnhzwbcozzp"
+
+    diagnostic_enabled: bool = False
+    diagnostic_username: str | None = None
+    diagnostic_password: str | None = None
+    login_rate_limit_attempts: int = Field(default=5, ge=1, le=100)
+    login_rate_limit_window_seconds: int = Field(default=300, ge=10, le=3600)
 
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"

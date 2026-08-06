@@ -16,15 +16,10 @@ from app.core.database import (
     get_supabase_anon_client,
     unwrap_response,
 )
-from app.shared.exceptions import ApplicationError, ConflictError
+from app.shared.exceptions import ApplicationError, ConflictError, UpstreamError
 
 
 logger = logging.getLogger(__name__)
-
-
-class UpstreamError(ApplicationError):
-    status_code = 502
-    code = "supabase_error"
 
 
 class PersonType(StrEnum):

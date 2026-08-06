@@ -61,6 +61,22 @@ python app.py
 - Health check: `http://127.0.0.1:8000/health`
 - Banco de dados: `http://127.0.0.1:8000/health/ready`
 
+## Diagnostico temporario
+
+A tela `/teste-conexao` e o endpoint `/api/health/supabase` ficam desabilitados por
+padrao. Para uma validacao administrativa temporaria, configure:
+
+```dotenv
+ERP_DIAGNOSTIC_ENABLED=true
+ERP_DIAGNOSTIC_USERNAME=administrador
+ERP_DIAGNOSTIC_PASSWORD=<senha-forte-e-temporaria>
+ERP_SUPABASE_EXPECTED_PROJECT_ID=gfqrqlvkqqnhzwbcozzp
+```
+
+O acesso usa HTTP Basic, nao inclui segredos no HTML e nao armazena a senha testada.
+Depois da validacao, defina `ERP_DIAGNOSTIC_ENABLED=false` e remova as credenciais
+temporarias do ambiente.
+
 ## Testes
 
 ```bash

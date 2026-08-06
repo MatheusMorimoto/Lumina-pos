@@ -16,6 +16,8 @@ services:
         value: "false"
       - key: ERP_SUPABASE_TIMEOUT_SECONDS
         value: "15"
+      - key: ERP_SUPABASE_EXPECTED_PROJECT_ID
+        value: gfqrqlvkqqnhzwbcozzp
       - key: ERP_SUPABASE_URL
         sync: false
       - key: ERP_SUPABASE_KEY
@@ -26,5 +28,16 @@ services:
         sync: false
       - key: ERP_CORS_ORIGINS
         sync: false
+      # Habilite somente durante a validacao e desative em seguida.
+      - key: ERP_DIAGNOSTIC_ENABLED
+        value: "false"
+      - key: ERP_DIAGNOSTIC_USERNAME
+        sync: false
+      - key: ERP_DIAGNOSTIC_PASSWORD
+        sync: false
+      - key: ERP_LOGIN_RATE_LIMIT_ATTEMPTS
+        value: "5"
+      - key: ERP_LOGIN_RATE_LIMIT_WINDOW_SECONDS
+        value: "300"
       - key: ERP_JWT_SECRET_KEY
         generateValue: true
