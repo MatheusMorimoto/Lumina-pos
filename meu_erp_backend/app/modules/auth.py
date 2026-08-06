@@ -13,10 +13,8 @@ from app.core.config import get_settings
 from app.core.database import (
     get_authenticated_client,
     get_supabase_anon_client,
-    get_supabase_client,
     unwrap_response,
 )
-from app.core.security import create_access_token, decode_access_token, verify_password
 from app.modules.registration import RegistrationIn, RegistrationService
 from app.shared.exceptions import AuthenticationError, RateLimitError, UpstreamError
 
@@ -227,62 +225,12 @@ def login(
     except Exception as exc:
         auth_error = exc
 
-    if not get_settings().legacy_password_login_enabled:
-        _record_failure(key)
-        if auth_error and _looks_like_upstream_failure(auth_error):
-            raise UpstreamError(
-                "O servico de autenticacao esta temporariamente indisponivel."
-            ) from None
-        _raise_safe_auth_error(auth_error)
-
-    try:
-        # Compatibilidade temporaria com usuarios que ainda possuem hash local.
-        db = get_supabase_client()
-        query = db.table("users").select("*").eq("email", email).eq("active", True)
-        if data.store_id:
-            query = query.eq("store_id", data.store_id)
-        rows = unwrap_response(query.limit(1).execute())
-    except Exception as exc:
-        _record_failure(key)
-        if _looks_like_upstream_failure(auth_error or exc):
-            raise UpstreamError(
-                "O servico de autenticacao esta temporariamente indisponivel."
-            ) from None
-        raise UpstreamError("Nao foi possivel consultar o cadastro de acesso.") from None
-
-    if not rows or not rows[0].get("password_hash") or not verify_password(
-        data.password, rows[0]["password_hash"]
-    ):
-        _record_failure(key)
-        if auth_error and _looks_like_upstream_failure(auth_error):
-            raise UpstreamError(
-                "O servico de autenticacao esta temporariamente indisponivel."
-            ) from None
-        _raise_safe_auth_error(auth_error)
-    user = rows[0]
-    token = create_access_token(user["id"], {"store_id": user["store_id"], "role": user["role"]})
-    _clear_attempts(key)
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in": get_settings().access_token_expire_minutes * 60,
-        "authentication": {
-            "success": True, "user_id": user["id"], "email": user["email"],
-            "email_confirmed": None, "token_received": True,
-        },
-        "profile": {
-            "found": True, "user_id": user["id"], "name": user.get("name"),
-            "cpf_masked": None, "store_id": user.get("store_id"),
-            "role": user.get("role"), "active": user.get("active", True),
-            "lookup_status": "legacy",
-        },
-        "user": {
-            "id": user["id"], "email": user["email"],
-            "person_type": None, "display_name": user.get("name"),
-            "account_id": user.get("store_id"), "role": user.get("role"),
-            "registration_complete": True,
-        },
-    }
+    _record_failure(key)
+    if auth_error and _looks_like_upstream_failure(auth_error):
+        raise UpstreamError(
+            "O servico de autenticacao esta temporariamente indisponivel."
+        ) from None
+    _raise_safe_auth_error(auth_error)
 
 
 @router.post("/password/recover", status_code=status.HTTP_202_ACCEPTED)
@@ -353,9 +301,9 @@ def current_user(token: Annotated[str, Depends(access_token)]) -> dict[str, Any]
             }
     except AuthenticationError:
         raise
-    except Exception:
-        pass
-    return decode_access_token(token)
+    except Exception as exc:
+        raise AuthenticationError("Sessao invalida ou expirada.") from exc
+    raise AuthenticationError("Sessao invalida ou expirada.")
 
 
 @router.get("/me")

@@ -178,14 +178,10 @@ def test_login_reports_unconfirmed_email_safely(monkeypatch):
     monkeypatch.setattr(
         auth, "get_supabase_anon_client", lambda: RejectedAuthClient("Email not confirmed")
     )
-    app.dependency_overrides[auth.get_supabase_client] = lambda: AuthClient(profile=False)
-    try:
-        response = TestClient(app).post(
-            "/api/auth/login",
-            json={"email": "pending@example.com", "password": "not-logged"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/api/auth/login",
+        json={"email": "pending@example.com", "password": "not-logged"},
+    )
     assert response.status_code == 401
     assert response.json()["error"]["message"] == "E-mail ainda nao confirmado."
 
