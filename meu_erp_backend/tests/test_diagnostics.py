@@ -124,6 +124,55 @@ def test_login_succeeds_when_operational_profile_is_missing(monkeypatch):
     assert response.json()["profile"]["found"] is False
 
 
+def test_login_completes_registration_pending_in_auth_metadata(monkeypatch):
+    fake = AuthClient(profile=False)
+    pending = {"person_type": "individual", "full_name": "Pessoa Teste"}
+    completed = []
+    original_sign_in = fake.sign_in_with_password
+
+    def sign_in(credentials):
+        response = original_sign_in(credentials)
+        response.user.user_metadata = {"pending_registration": pending}
+        return response
+
+    fake.sign_in_with_password = sign_in
+    monkeypatch.setattr(auth, "get_supabase_anon_client", lambda: fake)
+    monkeypatch.setattr(auth, "get_authenticated_client", lambda _token: fake)
+    monkeypatch.setattr(
+        auth.RegistrationService,
+        "complete_with_token",
+        lambda token, payload: completed.append((token, payload)),
+    )
+
+    response = TestClient(app).post(
+        "/api/auth/login", json={"email": "user@example.com", "password": "Senha123"}
+    )
+
+    assert response.status_code == 200
+    assert completed == [("test-access-token", pending)]
+
+
+def test_login_translates_read_timeout_to_service_unavailable(monkeypatch):
+    auth._attempts.clear()
+    monkeypatch.setattr(
+        auth,
+        "get_supabase_anon_client",
+        lambda: RejectedAuthClient("The read operation timed out"),
+    )
+
+    response = TestClient(app).post(
+        "/api/auth/login", json={"email": "user@example.com", "password": "Senha123"}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "code": "supabase_unavailable",
+            "message": "O servico de autenticacao esta temporariamente indisponivel.",
+        }
+    }
+
+
 def test_login_reports_unconfirmed_email_safely(monkeypatch):
     auth._attempts.clear()
     monkeypatch.setattr(

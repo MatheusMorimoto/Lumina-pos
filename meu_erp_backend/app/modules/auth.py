@@ -155,6 +155,12 @@ def _complete_pending_profile(auth_user: Any, token: str) -> None:
     pending = metadata.get("pending_registration")
     if not isinstance(pending, dict):
         return
+    try:
+        RegistrationService.complete_with_token(token, pending)
+    except Exception:
+        # A autenticacao ja foi concluida. Uma falha temporaria ao criar o perfil
+        # nao deve invalidar a sessao; o cliente recebe registration_complete=false.
+        return
 
 
 def access_token(
@@ -163,11 +169,6 @@ def access_token(
     if not credentials:
         raise AuthenticationError("Token de acesso obrigatorio.")
     return credentials.credentials
-    try:
-        RegistrationService.complete_with_token(token, pending)
-    except Exception:
-        # O login permanece valido; o cliente recebe registration_complete=false.
-        return
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
